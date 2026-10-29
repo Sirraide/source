@@ -265,7 +265,7 @@ auto Sema::ApplyConversionSequence(
     SmallVector<Expr*, 4> exprs_copy{exprs};
     for (auto& c : seq.conversions)
         if (not ApplyConversion(exprs_copy, c, loc))
-            return nullptr;
+            return {};
 
     Assert(exprs_copy.size() == 1, "Conversion sequence should only produce one expression");
     return exprs_copy.front();
@@ -523,6 +523,15 @@ auto Sema::BuildConversionSequence(
         var_type
     );
 
+    // Check that we can move this.
+    if (
+        not want_lvalue and
+        args.size() == 1 and
+        args.front()->is_lvalue() and
+        args.front()->type == var_type and
+        not var_type->can_move()
+    ) return CreateError(init_loc, "Type '{}' is not movable", var_type);
+
     // This is already a match; there is nothing to be done here; copying or moving an
     // existing value does not invoke an initialiser.
     if (CheckExactMatch()) return seq;
@@ -591,6 +600,7 @@ auto Sema::BuildConversionSequence(
         auto s = dyn_cast<RecordType>(var_type);
         s and
         not s->initialisers().empty() and
+        not (s->layout().has_literal_init() and not args.empty()) and
         not auto_deref_exact_match
     ) {
         // Create a call argument list for the initialiser arguments.
@@ -996,6 +1006,13 @@ auto Sema::BuildParameterConversionSequence(
         "Argument does not match parameter type '{}'",
         param.type
     );
+
+    if (
+        (param.intent == Intent::Move or param.intent == Intent::ByValue) and
+        not param.type->can_move() and
+        args.size() == 1 and
+        args.front()->is_lvalue()
+    ) return CreateError(loc, "Type '{}' is not movable", param.type);
 
     return seq;
 }

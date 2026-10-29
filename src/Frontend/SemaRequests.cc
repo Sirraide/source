@@ -892,6 +892,7 @@ bool Sema::RequestRecordInitialisersImpl(RecordType* record) {
 
     // Whether we have an empty initialiser.
     bool has_empty = false;
+    bool allow_aggregate = false;
 
     // Determine if we need to generate an initialiser procedure, and whether
     // we can even do so in the first place.
@@ -937,11 +938,15 @@ bool Sema::RequestRecordInitialisersImpl(RecordType* record) {
     }
 
     // There is no user-declared initialiser; generate initialisers if needed/possible.
-    else if (must_declare_init and all_default) {
+    else if (must_declare_init and all_default and record->layout().has_literal_init()) {
         // For an empty record, default and aggregate initialisation have the
         // same zero-argument signature; generate only the default entry point.
         bool define_default = all_default;
-        bool define_aggregate = not rgs::empty(record->scope()->fields());
+
+        // An aggregate initialiser moves its parameters into fields. For this
+        // to work, each field must be movable.
+        allow_aggregate = not record->can_move();
+        bool define_aggregate = not allow_aggregate and not rgs::empty(record->scope()->fields());
         DefineImplicitInitialisers(
             record,
             define_default,
@@ -954,7 +959,7 @@ bool Sema::RequestRecordInitialisersImpl(RecordType* record) {
     }
 
     // Finally, update the record bits.
-    record->update_initialisation(*tu, has_initialisers, has_empty);
+    record->update_initialisation(*tu, has_initialisers, has_empty, allow_aggregate);
     return true;
 }
 

@@ -7,8 +7,11 @@
 #include <srcc/Frontend/Sema.hh>
 #include <srcc/Macros.hh>
 
+#include <clang/AST/Attr.h>
 #include <clang/AST/Decl.h>
 #include <clang/AST/DeclGroup.h>
+#include <clang/AST/GlobalDecl.h>
+#include <clang/AST/ExprCXX.h>
 #include <clang/AST/ExternalASTSource.h>
 #include <clang/AST/DeclarationName.h>
 #include <clang/AST/RecordLayout.h>
@@ -57,6 +60,8 @@ class srcc::CXXImporter {
     Sema& S;
     ImportedClangModuleDecl* clang_module;
 
+    static constexpr String ConstructorWrapperAnnotation = "cxx_constructor_wrapper";
+
 public:
     explicit CXXImporter(Sema& S, ImportedClangModuleDecl* clang_module) : S(S), clang_module(clang_module) {}
     auto AST() -> clang::ASTContext& { return S.tu->cxx_compilation()->getASTContext(); }
@@ -70,11 +75,21 @@ public:
     auto ImportValue(SLoc loc, const clang::APValue& val, Type ty) -> Res<eval::RValue>;
 
 private:
-    auto ImportDeclImpl(clang::Decl* d) -> Res<Decl*>;
-    auto ImportRecordImpl(clang::RecordDecl* rd) -> Res<TypeDecl*>;
-    auto ImportFunctionImpl(clang::FunctionDecl* d) -> Res<ProcDecl*>;
-public:
+    auto BuildCtorOrDtorBody(
+        StructType* type,
+        clang::CXXRecordDecl* record,
+        Ptr<clang::CXXConstructorDecl> constructor,
+        ProcDecl* proc
+    ) -> Ptr<Expr>;
 
+    static auto FormatAnnotation(String s, StringRef args = {}) -> SmallString<64>;
+    auto GetAnnotation(clang::Decl* d, String s) -> Ptr<clang::AnnotateAttr>;
+    auto ImportDeclImpl(clang::Decl* d) -> Res<Decl*>;
+    auto ImportFunctionImpl(clang::FunctionDecl* d) -> Res<ProcDecl*>;
+    void ImportCtorsAndDtor(StructType* type, clang::CXXRecordDecl* record);
+    auto ImportRecordImpl(clang::RecordDecl* rd) -> Res<TypeDecl*>;
+
+public:
     // Convert 'QualType' and other clang types that can't be formatted w/o an ASTContext
     // to a string so it can be used in a diagnostic.
     // FIXME: This should really be a member function.
@@ -164,6 +179,158 @@ static auto GetStableCanonicalDecl(clang::Decl* d) -> clang::Decl* {
         .Case<clang::FunctionDecl>([](auto* fd) { return fd->getDefinition() ?: fd->getFirstDecl(); })
         .Case<clang::EnumConstantDecl>([](auto* fd) { return fd->getFirstDecl(); })
         .Default([&](auto* d){ return d->getCanonicalDecl(); });
+}
+
+static auto MangleCXXDecl(clang::MangleContext& context, clang::GlobalDecl decl) -> SmallString<128> {
+    SmallString<128> name;
+    llvm::raw_svector_ostream stream(name);
+    context.mangleName(decl, stream);
+    return name;
+}
+
+/// Build the body of a constructor or destructor. If 'constructor' is
+/// null, we’re building the destructor.
+auto srcc::CXXImporter::BuildCtorOrDtorBody(
+    StructType* type,
+    clang::CXXRecordDecl* record,
+    Ptr<clang::CXXConstructorDecl> constructor,
+    ProcDecl* proc
+) -> Ptr<Expr> {
+    auto loc = proc->location();
+    auto& compilation = *S.tu->cxx_compilation().get();
+
+    // Get the mangled name of the ctor/dtor.
+    auto global = constructor
+        ? clang::GlobalDecl(constructor.get(), clang::Ctor_Complete)
+        : clang::GlobalDecl(record->getDestructor(), clang::Dtor_Complete);
+    auto name = Format("__srcc_cxx_glue_{}", MangleCXXDecl(*compilation.mangler(), global));
+
+    // Get the class name.
+    auto policy = clang::PrintingPolicy(compilation.getLangOpts());
+    policy.FullyQualifiedName = true;
+    auto class_name = QualType(AST().getCanonicalTagType(record)).getAsString(policy);
+
+    // Create a string that contains all the parameter declarations.
+    std::string params = "void* __destination";
+    std::string arguments;
+    if (constructor) {
+        for (auto [index, param] : enumerate(constructor->parameters())) {
+            auto qt = param->getType();
+            auto arg_name = Format("__arg{}", index);
+            auto glue_type = qt->isReferenceType() ? AST().getPointerType(qt->getPointeeType()) : qt;
+            std::string spelling;
+            llvm::raw_string_ostream os(spelling);
+            glue_type.print(os, policy, arg_name);
+            params += ", " + spelling;
+            if (index) arguments += ", ";
+            arguments += qt->isReferenceType()
+                ? Format("static_cast<{}>(*{})", qt.getAsString(policy), arg_name)
+                : Format("static_cast<{}>({})", AST().getRValueReferenceType(qt).getAsString(policy), arg_name);
+        }
+    }
+
+    // FIXME: Catch exceptions here and return an error once we have proper
+    // result types.
+    SmallString<256> body;
+    if (constructor) body = Format("::new (__destination) _Type({});", arguments).str().str();
+    else body = "static_cast<_Type*>(__destination)->_Type::~_Type();";
+    auto code = Format(
+        "#include <new>\n"
+        "#include <type_traits>\n"
+        "[[_Clang::__always_inline__]] {4}\n"
+        "inline void {0}({1}) noexcept __asm__(\"{0}\");\n"
+        "inline void {0}({1}) noexcept {{ using _Type = {2}; {3} }}\n",
+        name,
+        params,
+        class_name,
+        body,
+        constructor ? FormatAnnotation(
+            ConstructorWrapperAnnotation,
+            Format("std::type_identity<{}>{{}}", class_name)
+        ).str() : ""
+    );
+
+    // Parse the glue function.
+    if (not compilation.parse(code)) return {};
+    auto lookup = AST().getTranslationUnitDecl()->lookup(
+        clang::DeclarationName(compilation.getPreprocessor().getIdentifierInfo(name))
+    );
+
+    auto helper_decl = cast<clang::FunctionDecl>(lookup.front());
+
+    // If this is a constructor, ensure C++ overload resolution picked the right one;
+    // if this ever fails, we need to fix our logic above.
+    if (constructor) {
+        auto definition = helper_decl->getDefinition();
+        auto block = cast<clang::CompoundStmt>(definition->getBody());
+        auto placement = cast<clang::CXXNewExpr>(block->body_back());
+        if (auto construct = placement->getConstructExpr()) {
+            auto selected = construct->getConstructor();
+            if (selected->getCanonicalDecl() != constructor->getCanonicalDecl())
+                return S.ICE(loc, "C++ overload resolution selected the wrong constructor for '{}'", type);
+        }
+    }
+
+    // Mark it as used and emit it.
+    helper_decl->setIsUsed();
+    compilation.codegen().HandleTopLevelDecl(clang::DeclGroupRef(helper_decl));
+
+    // Import it.
+    auto imported = ImportDecl(helper_decl);
+    if (not imported) {
+        S.ReportDiag(std::move(*imported.error()));
+        return {};
+    }
+
+    // Now, we need to call the glue function.
+    auto helper = S.RequestReference(*imported, loc);
+    if (not helper) return {};
+    SmallVector<Expr*> args;
+
+    // Forward all the parameters if this is a constructor.
+    if (constructor) {
+        for (auto param : proc->params()) {
+            auto ref = S.RequestReference(param, loc);
+            if (not ref) return {};
+            args.push_back(ref.get());
+        }
+    }
+
+    // If it is a destructor, pass our first argument along as a pointer.
+    else {
+        auto ref = S.RequestReference(proc->params().front(), loc);
+        if (not ref) return {};
+        auto pointer = S.BuildUnaryExpr(Tk::Ampersand, ref.get(), false, loc);
+        if (not pointer) return {};
+        args.push_back(new (*S.tu) CastExpr(
+            PtrType::Get(*S.tu, Type::VoidTy, false),
+            CastExpr::Pointer,
+            pointer.get(),
+            loc,
+            true
+        ));
+    }
+
+    // Call the glue function.
+    auto tuple = TupleExpr::Create(*S.tu, Type::CallArgListTy, args, {}, loc);
+    return S.BuildCallExpr(helper.get(), tuple, loc, false);
+}
+
+auto srcc::CXXImporter::FormatAnnotation(String s, StringRef args) -> SmallString<64> {
+    SmallString<64> annot;
+    Format(annot, "[[_Clang::__annotate__(\"__srcc__\", \"{}\"", s);
+    if (not args.empty()) Format(annot, ", {}", args);
+    annot += ")]]";
+    return annot;
+}
+
+auto srcc::CXXImporter::GetAnnotation(clang::Decl* d, String annotation) -> Ptr<clang::AnnotateAttr> {
+    for (auto attr : d->specific_attrs<clang::AnnotateAttr>()) {
+        if (attr->getAnnotation() != "__srcc__" or attr->args_size() == 0) continue;
+        auto kind = dyn_cast<clang::StringLiteral>((*attr->args_begin())->IgnoreParenImpCasts());
+        if (kind and kind->getString() == annotation) return attr;
+    }
+    return {};
 }
 
 auto srcc::CXXImporter::ImportDecl(clang::Decl* d) -> Res<Decl*> {
@@ -356,8 +523,45 @@ auto srcc::CXXImporter::ImportFunctionImpl(clang::FunctionDecl* d) -> Res<ProcDe
             return NYI(d, "builtin function");
     }
 
-    // Import the type.
-    auto ty = cast<ProcType>(TRY(ImportType(d->getLocation(), QualType(d->getFunctionType(), 0))));
+
+    // Check if this is a constructor wrapper; these procedures act like
+    // rvalues and have an extra leading 'void*' parameter that is not
+    // reflected in the signature.
+    ProcType* ty;
+    auto constructor_wrapper = GetAnnotation(d, ConstructorWrapperAnnotation);
+    if (constructor_wrapper) {
+        // FIXME: Pass a reflection of the constructed type once Clang supports
+        // reflecting arbitrary types. Until then, we use type_identity as a hack.
+        QualType class_ty;
+        auto identity = constructor_wrapper->args_begin()[1];
+        Assert(S.tu->cxx_compilation()->getSema().isStdTypeIdentity(identity->getType(), &class_ty));
+        auto result = TRY(ImportType(d->getLocation(), class_ty));
+
+        // Build the procedure type.
+        SmallVector<ParamTypeData> params;
+        for (auto param : d->parameters().drop_front()) params.emplace_back(
+            Intent::ByValue,
+            TRY(ImportType(param->getLocation(), param->getType()))
+        );
+
+        ty = ProcType::Get(
+            *S.tu,
+            {result, Expr::RValue},
+            params,
+            CallingConvention::CXXConstructorWrapper
+        );
+    } else {
+        ty = cast<ProcType>(TRY(ImportType(d->getLocation(), QualType(d->getFunctionType(), 0))));
+    }
+
+    // Reject immovable types for native value returns; constructor wrappers
+    // instead initialise the result directly in its final storage.
+    if (not constructor_wrapper and not ty->returns_lvalue() and not ty->ret()->can_move())
+        return NYI(d, "returning an immovable class by value");
+
+    for (auto param : ty->params())
+        if (not param.type->can_move())
+            return NYI(d, "passing an immovable class by value");
 
     // Create the procedure.
     auto proc = ProcDecl::Create(
@@ -379,7 +583,7 @@ auto srcc::CXXImporter::ImportFunctionImpl(clang::FunctionDecl* d) -> Res<ProcDe
     // a parameter name if it is the same across all declarations (in which that
     // parameter has a name).
     SmallVector<Sema::ParamSpec> param_specs;
-    for (auto i : llvm::seq(ty->param_count())) {
+    for (auto i : llvm::seq(constructor_wrapper ? 1u : 0u, d->getNumParams())) {
         std::optional<clang::DeclarationName> name;
         clang::SourceLocation name_loc;
         for (auto redecl : d->redecls()) {
@@ -429,6 +633,97 @@ auto srcc::CXXImporter::ImportFunctionImpl(clang::FunctionDecl* d) -> Res<ProcDe
     return proc;
 }
 
+void srcc::CXXImporter::ImportCtorsAndDtor(StructType* type, clang::CXXRecordDecl* record) {
+    auto& sema = S.tu->cxx_compilation()->getSema();
+    sema.ForceDeclarationOfImplicitMembers(record);
+
+    // If we don’t have a destructor, give up.
+    auto destructor = record->getDestructor();
+    if (
+        not destructor or
+        destructor->isDeleted() or
+        destructor->getAccess() != clang::AS_public
+    ) return;
+
+    // Return a lambda that creates a constructor or destructor body.
+    auto MakeBody = [&](Ptr<clang::CXXConstructorDecl> constructor) {
+        // The importer may have gone out of scope by the time the body is
+        // requested, so don’t capture by reference here.
+        return [=, sema = &S, module = clang_module](ProcDecl* proc) -> Ptr<Expr> {
+            CXXImporter importer{*sema, module};
+            return importer.BuildCtorOrDtorBody(type, record, constructor, proc);
+        };
+    };
+
+    // Build the deleter.
+    auto loc = type->decl()->location();
+    auto deleter = S.BuildImplicitProcedure(
+        ProcType::Get(*S.tu, {Type::VoidTy, Expr::RValue}, {{Intent::Inout, type}}),
+        Tk::Delete,
+        // FIXME: Add 'Sema::ParamSpec::This(SLoc)'
+        {Sema::ParamSpec{.name = {String("this"), loc}, .is_this = true}},
+        Linkage::Merge,
+        Mangling::Source,
+        loc,
+        MakeBody({}),
+        true
+    );
+
+    deleter->parent = type->parent;
+    deleter->props.associated_type = type;
+    type->set_delete(deleter);
+
+    // Build an initialiser for each constructor we can handle.
+    bool has_empty = false;
+    if (not record->isAbstract()) {
+        outer: for (auto constructor : record->ctors()) {
+            if (
+                constructor->isDeleted() or
+                constructor->getAccess() != clang::AS_public or
+                constructor->isCopyOrMoveConstructor() or
+                constructor->getDescribedFunctionTemplate() or
+                constructor->isVariadic() or
+                constructor->isInheritingConstructor() or
+                constructor->isImmediateFunction()
+            ) continue;
+
+            // Build ctor params.
+            SmallVector<ParamTypeData> params;
+            SmallVector<Sema::ParamSpec> specs;
+            for (auto param : constructor->parameters()) {
+                auto imported = ImportType(param->getLocation(), param->getType());
+                if (not imported or not (*imported)->can_move()) continue outer;
+                params.emplace_back(Intent::Move, *imported);
+                specs.push_back({
+                    .name = {
+                        S.tu->save(param->getName()),
+                        ImportSourceLocation(param->getLocation())
+                    },
+                });
+            }
+
+            // Declare the procedure.
+            auto proc = S.BuildImplicitProcedure(
+                ProcType::Get(*S.tu, {type, Expr::RValue}, params),
+                Tk::Init,
+                specs,
+                Linkage::Merge,
+                Mangling::Source,
+                loc,
+                MakeBody(constructor),
+                true
+            );
+
+            proc->parent = type->parent;
+            proc->props.associated_type = type;
+            S.AddDeclToScope(type->scope(), proc);
+            has_empty |= params.empty();
+        }
+    }
+
+    type->update_initialisation(*S.tu, not type->initialisers().empty(), has_empty);
+}
+
 auto srcc::CXXImporter::ImportName(clang::TagDecl* td) -> StringRef {
     if (auto tdef = td->getTypedefNameForAnonDecl()) return tdef->getName();
     if (td->getDeclName().isIdentifier()) return td->getName();
@@ -448,10 +743,9 @@ auto srcc::CXXImporter::ImportRecordImpl(clang::RecordDecl* rd) -> Res<TypeDecl*
         ImportSourceLocation(rd->getLocation())
     )->decl();
 
-    // Neither are types that have a destructor, constructor, etc.
-    if (auto CXX = dyn_cast<clang::CXXRecordDecl>(rd)) {
-        if (not CXX->isCLike()) return NYI(rd, "non-trivial class type");
-    }
+    auto cxx = dyn_cast<clang::CXXRecordDecl>(rd);
+    bool is_cxx_class = cxx and not cxx->isCLike();
+    if (is_cxx_class and rd->getDeclName().isEmpty()) return NYI(rd, "anonymous class type");
 
     // Declare the type now because it may be recursive.
     auto scope = S.tu->create_scope<RecordScope>(S.global_scope());
@@ -471,13 +765,26 @@ auto srcc::CXXImporter::ImportRecordImpl(clang::RecordDecl* rd) -> Res<TypeDecl*
     SmallVector<FieldDecl*> fields;
     SmallVector<Size> offsets;
     for (auto [i, f] : enumerate(rd->fields())) {
-        if (f->getMaxAlignment() != 0) return NYI(f, "unaligned or overaligned field");
-        if (f->hasInClassInitializer()) return NYI(f, "field with in-class initialiser");
+        // Ignore non-public members and bitfields.
+        if (is_cxx_class and (f->getAccess() != clang::AS_public or f->isBitField())) continue;
+
+        // We currently don’t support unaligned fields and in-class initialisers.
+        //
+        // FIXME: I think overaligned fields should 'just work' since we're getting
+        // field offsets etc. from Clang.
+        if (not is_cxx_class and f->getMaxAlignment() != 0) return NYI(f, "unaligned or overaligned field");
+        if (not is_cxx_class and f->hasInClassInitializer()) return NYI(f, "field with in-class initialiser");
+
+        // Import the field type.
+        auto field_type = ImportType(f->getLocation(), f->getType());
+        if (not field_type) std::unexpected(std::move(field_type.error()));
+
+        // Declare the field.
         auto decl = new (*S.tu) FieldDecl(
             type,
-            TRY(ImportType(f->getLocation(), f->getType())),
+            *field_type,
             S.tu->save(f->getName()),
-            utils::safe_cast<u32>(i),
+            utils::safe_cast<u32>(fields.size()),
             ImportSourceLocation(f->getLocation())
         );
 
@@ -504,6 +811,16 @@ auto srcc::CXXImporter::ImportRecordImpl(clang::RecordDecl* rd) -> Res<TypeDecl*
         can_persist_as_bytes
     );
 
+    if (is_cxx_class) {
+        bits.can_copy = false;
+        bits.can_move = false;
+        bits.can_persist_as_bytes = false;
+        bits.contains_pointer = true;
+        bits.init_from_no_args = false;
+        bits.literal_initialiser = false;
+        bits.zero_init = false;
+    }
+
     auto rl = RecordLayout::Get(
         *S.tu,
         offsets,
@@ -514,6 +831,7 @@ auto srcc::CXXImporter::ImportRecordImpl(clang::RecordDecl* rd) -> Res<TypeDecl*
     );
 
     type->finalise(rl);
+    if (is_cxx_class) ImportCtorsAndDtor(type, cxx);
     return type->decl();
 }
 
@@ -673,6 +991,7 @@ auto srcc::CXXImporter::ImportValue(
     const clang::APValue& val,
     Type ty
 ) -> Res<eval::RValue> {
+    if (not ty->can_move()) return NYI(loc, "constant value of immovable type '{}'", ty);
     switch (val.getKind()) {
         case clang::APValue::Int: {
             Assert(ty->is_integer_or_bool());

@@ -1,0 +1,918 @@
+// R %srcc --llvm -fshort-filenames --target x86_64-unknown-linux -I test/inputs %s
+module lifecycle;
+import <cxx-lifecycle.h> as cpp;
+struct Outer { item: cpp::CxxObject; }
+export proc make = cpp::CxxObject(42);
+export proc make_outer -> Outer = ::(cpp::CxxObject(4),);
+export proc take_outer (outer: Outer) {}
+export proc take (object: cpp::CxxObject) {}
+export proc borrow (in object: cpp::CxxObject) {}
+export proc run {
+    var object = cpp::CxxObject(42);
+    var defaulted: cpp::CxxObject;
+    var annotated = cpp::annotated_construct(value: 23);
+    borrow(object);
+    take(cpp::CxxObject());
+    take_outer(Outer());
+    var overloaded = cpp::CxxOverloaded(true);
+    var input: i32;
+    var referenced = cpp::CxxReference(&input);
+    var trivial: cpp::CxxTrivial;
+    var derived = cpp::CxxDerived(7);
+    var hidden: cpp::CxxHidden;
+    var outer: Outer;
+    var aggregate: Outer = (cpp::CxxObject(2),);
+    var array: cpp::CxxObject[2];
+    var optional: cpp::CxxObject? = cpp::CxxObject(4);
+}
+
+// * ; ModuleID = 'lifecycle'
+// + source_filename = "lifecycle"
+// + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+// + target triple = "x86_64-unknown-linux"
+// +
+// + %"struct.std::type_identity" = type { i8 }
+// + %struct.CxxObject = type { i32 }
+// + %struct.CxxDerived = type <{ ptr, i32, [4 x i8], %struct.CxxBase.base, [4 x i8] }>
+// + %struct.CxxBase.base = type <{ ptr, i32 }>
+// + %struct.CxxBase = type <{ ptr, i32, [4 x i8] }>
+// + %struct.CxxReference = type { ptr }
+// +
+// + $_Z19annotated_constructPvi = comdat any
+// +
+// + $__srcc_cxx_glue__ZN13CxxOverloadedC1Ei = comdat any
+// +
+// + $__srcc_cxx_glue__ZN13CxxOverloadedC1Eb = comdat any
+// +
+// + $__srcc_cxx_glue__ZN12CxxReferenceC1ERi = comdat any
+// +
+// + $__srcc_cxx_glue__ZN10CxxTrivialC1Ev = comdat any
+// +
+// + $__srcc_cxx_glue__ZN10CxxDerivedC1Ei = comdat any
+// +
+// + $__srcc_cxx_glue__ZN9CxxHiddenC1Ev = comdat any
+// +
+// + $__srcc_cxx_glue__ZN9CxxObjectC1Ev = comdat any
+// +
+// + $__srcc_cxx_glue__ZN9CxxObjectC1Ei = comdat any
+// +
+// + $_ZN9CxxObjectC2Ei = comdat any
+// +
+// + $__clang_call_terminate = comdat any
+// +
+// + $_ZN9CxxObjectC2Ev = comdat any
+// +
+// + $_ZN9CxxHiddenC2Ev = comdat any
+// +
+// + $_ZN10CxxDerivedC1Ei = comdat any
+// +
+// + $_ZN7CxxBaseC2Ev = comdat any
+// +
+// + $_ZN10CxxDerivedD1Ev = comdat any
+// +
+// + $_ZN10CxxDerivedD0Ev = comdat any
+// +
+// + $_ZTv0_n24_N10CxxDerivedD1Ev = comdat any
+// +
+// + $_ZTv0_n24_N10CxxDerivedD0Ev = comdat any
+// +
+// + $_ZN10CxxDerivedD2Ev = comdat any
+// +
+// + $_ZN7CxxBaseD2Ev = comdat any
+// +
+// + $_ZN7CxxBaseD0Ev = comdat any
+// +
+// + $_ZN12CxxReferenceC2ERi = comdat any
+// +
+// + $_ZN13CxxOverloadedC2Eb = comdat any
+// +
+// + $_ZN13CxxOverloadedC2Ei = comdat any
+// +
+// + $_ZN12CxxReferenceD2Ev = comdat any
+// +
+// + $_ZN9CxxObjectD2Ev = comdat any
+// +
+// + $_ZTV10CxxDerived = comdat any
+// +
+// + $_ZTT10CxxDerived = comdat any
+// +
+// + $_ZTI10CxxDerived = comdat any
+// +
+// + $_ZTS10CxxDerived = comdat any
+// +
+// + $_ZTI7CxxBase = comdat any
+// +
+// + $_ZTS7CxxBase = comdat any
+// +
+// + $_ZTV7CxxBase = comdat any
+// +
+// + @__srcc_str.0 = private constant [2 x i8] c"+\00", align 1
+// + @__srcc_str.1 = private constant [17 x i8] c"integer overflow\00", align 1
+// + @__srcc_str.2 = private constant [18 x i8] c"cxx-lifecycle.src\00", align 1
+// + @llvm.global.annotations = appending global [9 x { ptr, ptr, ptr, i32, ptr }] [{ ptr, ptr, ptr, i32, ptr } { ptr @_Z19annotated_constructPvi, ptr @.str, ptr @.str.1, i32 73, ptr @.args }, { ptr, ptr, ptr, i32, ptr } { ptr @__srcc_cxx_glue__ZN13CxxOverloadedC1Ei, ptr @.str, ptr @.str.3, i32 5, ptr @.args.4 }, { ptr, ptr, ptr, i32, ptr } { ptr @__srcc_cxx_glue__ZN13CxxOverloadedC1Eb, ptr @.str, ptr @.str.5, i32 5, ptr @.args.6 }, { ptr, ptr, ptr, i32, ptr } { ptr @__srcc_cxx_glue__ZN12CxxReferenceC1ERi, ptr @.str, ptr @.str.7, i32 5, ptr @.args.8 }, { ptr, ptr, ptr, i32, ptr } { ptr @__srcc_cxx_glue__ZN10CxxTrivialC1Ev, ptr @.str, ptr @.str.9, i32 5, ptr @.args.10 }, { ptr, ptr, ptr, i32, ptr } { ptr @__srcc_cxx_glue__ZN10CxxDerivedC1Ei, ptr @.str, ptr @.str.11, i32 5, ptr @.args.12 }, { ptr, ptr, ptr, i32, ptr } { ptr @__srcc_cxx_glue__ZN9CxxHiddenC1Ev, ptr @.str, ptr @.str.13, i32 5, ptr @.args.14 }, { ptr, ptr, ptr, i32, ptr } { ptr @__srcc_cxx_glue__ZN9CxxObjectC1Ev, ptr @.str, ptr @.str.15, i32 5, ptr @.args.16 }, { ptr, ptr, ptr, i32, ptr } { ptr @__srcc_cxx_glue__ZN9CxxObjectC1Ei, ptr @.str, ptr @.str.17, i32 5, ptr @.args.18 }], section "llvm.metadata"
+// + @_ZTV10CxxDerived = linkonce_odr dso_local constant { [5 x ptr], [5 x ptr] } { [5 x ptr] [ptr inttoptr (i64 16 to ptr), ptr null, ptr @_ZTI10CxxDerived, ptr @_ZN10CxxDerivedD1Ev, ptr @_ZN10CxxDerivedD0Ev], [5 x ptr] [ptr inttoptr (i64 -16 to ptr), ptr inttoptr (i64 -16 to ptr), ptr @_ZTI10CxxDerived, ptr @_ZTv0_n24_N10CxxDerivedD1Ev, ptr @_ZTv0_n24_N10CxxDerivedD0Ev] }, comdat, align 8
+// + @_ZTT10CxxDerived = linkonce_odr dso_local unnamed_addr constant [2 x ptr] [ptr getelementptr inbounds inrange(-24, 16) (i8, ptr @_ZTV10CxxDerived, i64 24), ptr getelementptr inbounds inrange(-24, 16) (i8, ptr @_ZTV10CxxDerived, i64 64)], comdat, align 8
+// + @_ZTI10CxxDerived = linkonce_odr dso_local constant { ptr, ptr, i32, i32, ptr, i64 } { ptr getelementptr inbounds (i8, ptr @_ZTVN10__cxxabiv121__vmi_class_type_infoE, i64 16), ptr @_ZTS10CxxDerived, i32 0, i32 1, ptr @_ZTI7CxxBase, i64 -6141 }, comdat, align 8
+// + @_ZTVN10__cxxabiv121__vmi_class_type_infoE = external global [0 x ptr]
+// + @_ZTS10CxxDerived = linkonce_odr dso_local constant [13 x i8] c"10CxxDerived\00", comdat, align 1
+// + @_ZTI7CxxBase = linkonce_odr dso_local constant { ptr, ptr } { ptr getelementptr inbounds (i8, ptr @_ZTVN10__cxxabiv117__class_type_infoE, i64 16), ptr @_ZTS7CxxBase }, comdat, align 8
+// + @_ZTVN10__cxxabiv117__class_type_infoE = external global [0 x ptr]
+// + @_ZTS7CxxBase = linkonce_odr dso_local constant [9 x i8] c"7CxxBase\00", comdat, align 1
+// + @_ZTV7CxxBase = linkonce_odr dso_local constant { [4 x ptr] } { [4 x ptr] [ptr null, ptr @_ZTI7CxxBase, ptr @_ZN7CxxBaseD2Ev, ptr @_ZN7CxxBaseD0Ev] }, comdat, align 8
+// + @.str = private unnamed_addr constant [9 x i8] c"__srcc__\00", section "llvm.metadata"
+// + @.str.1 = private unnamed_addr constant [28 x i8] c"test/inputs/cxx-lifecycle.h\00", section "llvm.metadata"
+// + @.str.2 = private unnamed_addr constant [24 x i8] c"cxx_constructor_wrapper\00", align 1
+// + @.args = private unnamed_addr constant { ptr, %"struct.std::type_identity" } { ptr @.str.2, %"struct.std::type_identity" undef }, section "llvm.metadata"
+// + @.str.3 = private unnamed_addr constant [17 x i8] c"__srcc.glue.2.cc\00", section "llvm.metadata"
+// + @.args.4 = private unnamed_addr constant { ptr, %"struct.std::type_identity" } { ptr @.str.2, %"struct.std::type_identity" undef }, section "llvm.metadata"
+// + @.str.5 = private unnamed_addr constant [17 x i8] c"__srcc.glue.3.cc\00", section "llvm.metadata"
+// + @.args.6 = private unnamed_addr constant { ptr, %"struct.std::type_identity" } { ptr @.str.2, %"struct.std::type_identity" undef }, section "llvm.metadata"
+// + @.str.7 = private unnamed_addr constant [17 x i8] c"__srcc.glue.5.cc\00", section "llvm.metadata"
+// + @.args.8 = private unnamed_addr constant { ptr, %"struct.std::type_identity" } { ptr @.str.2, %"struct.std::type_identity" undef }, section "llvm.metadata"
+// + @.str.9 = private unnamed_addr constant [17 x i8] c"__srcc.glue.7.cc\00", section "llvm.metadata"
+// + @.args.10 = private unnamed_addr constant { ptr, %"struct.std::type_identity" } { ptr @.str.2, %"struct.std::type_identity" undef }, section "llvm.metadata"
+// + @.str.11 = private unnamed_addr constant [17 x i8] c"__srcc.glue.9.cc\00", section "llvm.metadata"
+// + @.args.12 = private unnamed_addr constant { ptr, %"struct.std::type_identity" } { ptr @.str.2, %"struct.std::type_identity" undef }, section "llvm.metadata"
+// + @.str.13 = private unnamed_addr constant [18 x i8] c"__srcc.glue.11.cc\00", section "llvm.metadata"
+// + @.args.14 = private unnamed_addr constant { ptr, %"struct.std::type_identity" } { ptr @.str.2, %"struct.std::type_identity" undef }, section "llvm.metadata"
+// + @.str.15 = private unnamed_addr constant [18 x i8] c"__srcc.glue.13.cc\00", section "llvm.metadata"
+// + @.args.16 = private unnamed_addr constant { ptr, %"struct.std::type_identity" } { ptr @.str.2, %"struct.std::type_identity" undef }, section "llvm.metadata"
+// + @.str.17 = private unnamed_addr constant [18 x i8] c"__srcc.glue.14.cc\00", section "llvm.metadata"
+// + @.args.18 = private unnamed_addr constant { ptr, %"struct.std::type_identity" } { ptr @.str.2, %"struct.std::type_identity" undef }, section "llvm.metadata"
+// +
+// + ; Function Attrs: noinline norecurse nounwind optnone uwtable
+// + define void @__src_static_init.lifecycle() #0 {
+// +   ret void
+// + }
+// +
+// + ; Function Attrs: noinline nounwind optnone uwtable
+// + define void @"_Slifecycle::make() -> CxxObject"(ptr sret([4 x i8]) %0) #1 {
+// +   call void @"_Slifecycle::CxxObject::init(i32) -> CxxObject"(ptr sret([4 x i8]) %0, i32 noundef 42)
+// +   ret void
+// + }
+// +
+// + ; Function Attrs: noinline nounwind optnone uwtable
+// + define linkonce_odr void @"_Slifecycle::CxxObject::init(i32) -> CxxObject"(ptr sret([4 x i8]) %0, i32 noundef %1) #1 personality ptr @__gxx_personality_v0 {
+// +   %__destination.addr.i = alloca ptr, align 8
+// +   %__arg0.addr.i = alloca i32, align 4
+// +   %3 = alloca i8, i64 4, align 4
+// +   store i32 %1, ptr %3, align 4
+// +   %4 = load i32, ptr %3, align 4
+// +   store ptr %0, ptr %__destination.addr.i, align 8
+// +   store i32 %4, ptr %__arg0.addr.i, align 4
+// +   %5 = load ptr, ptr %__destination.addr.i, align 8
+// +   %6 = load i32, ptr %__arg0.addr.i, align 4
+// +   invoke void @_ZN9CxxObjectC2Ei(ptr noundef nonnull align 4 dereferenceable(4) %5, i32 noundef %6)
+// +           to label %__srcc_cxx_glue__ZN9CxxObjectC1Ei.exit unwind label %terminate.lpad.i
+// +
+// + terminate.lpad.i:                                 ; preds = %2
+// +   %7 = landingpad { ptr, i32 }
+// +           catch ptr null
+// +   %8 = extractvalue { ptr, i32 } %7, 0
+// +   call void @__clang_call_terminate(ptr %8) #9
+// +   unreachable
+// +
+// + __srcc_cxx_glue__ZN9CxxObjectC1Ei.exit:           ; preds = %2
+// +   ret void
+// + }
+// +
+// + ; Function Attrs: noinline nounwind optnone uwtable
+// + define void @"_Slifecycle::make_outer() -> Outer"(ptr sret([4 x i8]) %0) #1 {
+// +   call void @"_Slifecycle::CxxObject::init(i32) -> CxxObject"(ptr sret([4 x i8]) %0, i32 noundef 4)
+// +   ret void
+// + }
+// +
+// + ; Function Attrs: noinline nounwind optnone uwtable
+// + define void @"_Slifecycle::take_outer(Outer)"(ptr align 4 dereferenceable(4) %0) #1 {
+// +   call void @"_Slifecycle::Outer::delete(inout Outer)"(ptr %0)
+// +   ret void
+// + }
+// +
+// + ; Function Attrs: noinline nounwind optnone uwtable
+// + define void @"_Slifecycle::Outer::delete(inout Outer)"(ptr align 4 dereferenceable(4) %0) #1 {
+// +   call void @"_Slifecycle::CxxObject::delete(inout CxxObject)"(ptr %0)
+// +   ret void
+// + }
+// +
+// + ; Function Attrs: noinline nounwind optnone uwtable
+// + define linkonce_odr void @"_Slifecycle::CxxObject::delete(inout CxxObject)"(ptr align 4 dereferenceable(4) %0) #1 {
+// +   %__destination.addr.i = alloca ptr, align 8
+// +   store ptr %0, ptr %__destination.addr.i, align 8
+// +   %2 = load ptr, ptr %__destination.addr.i, align 8
+// +   call void @_ZN9CxxObjectD2Ev(ptr noundef nonnull align 4 dead_on_return(4) dereferenceable(4) %2) #10
+// +   ret void
+// + }
+// +
+// + ; Function Attrs: noinline nounwind optnone uwtable
+// + define linkonce_odr void @"_Slifecycle::CxxObject::init() -> CxxObject"(ptr sret([4 x i8]) %0) #1 {
+// +   %__destination.addr.i = alloca ptr, align 8
+// +   store ptr %0, ptr %__destination.addr.i, align 8
+// +   %2 = load ptr, ptr %__destination.addr.i, align 8
+// +   call void @llvm.memset.p0.i64(ptr align 4 %2, i8 0, i64 4, i1 false)
+// +   call void @_ZN9CxxObjectC2Ev(ptr noundef nonnull align 4 dereferenceable(4) %2) #10
+// +   ret void
+// + }
+// +
+// + ; Function Attrs: noinline nounwind optnone uwtable
+// + define void @"_Slifecycle::take(CxxObject)"(ptr align 4 dereferenceable(4) %0) #1 {
+// +   call void @"_Slifecycle::CxxObject::delete(inout CxxObject)"(ptr %0)
+// +   ret void
+// + }
+// +
+// + ; Function Attrs: noinline nounwind optnone uwtable
+// + define void @"_Slifecycle::borrow(in CxxObject)"(ptr align 4 dereferenceable(4) %0) #1 {
+// +   ret void
+// + }
+// +
+// + ; Function Attrs: noinline nounwind optnone uwtable
+// + define void @"_Slifecycle::run()"() #1 {
+// +   %destination.addr.i = alloca ptr, align 8
+// +   %value.addr.i = alloca i32, align 4
+// +   %1 = alloca i8, i64 4, align 4
+// +   %2 = alloca i8, i64 4, align 4
+// +   %3 = alloca i8, i64 4, align 4
+// +   %4 = alloca i8, i64 4, align 4
+// +   %5 = alloca i8, i64 4, align 4
+// +   %6 = alloca i8, i64 8, align 8
+// +   %7 = alloca i8, i64 8, align 4
+// +   %8 = alloca i8, i64 32, align 8
+// +   %9 = alloca i8, i64 4, align 4
+// +   %10 = alloca i8, i64 4, align 4
+// +   %11 = alloca i8, i64 4, align 4
+// +   %12 = alloca i8, i64 8, align 4
+// +   %13 = alloca i8, i64 5, align 4
+// +   %14 = alloca i8, i64 4, align 4
+// +   %15 = alloca i8, i64 4, align 4
+// +   %16 = alloca i8, i64 80, align 8
+// +   call void @"_Slifecycle::CxxObject::init(i32) -> CxxObject"(ptr sret([4 x i8]) %1, i32 noundef 42)
+// +   call void @"_Slifecycle::CxxObject::init() -> CxxObject"(ptr sret([4 x i8]) %2)
+// +   store ptr %3, ptr %destination.addr.i, align 8
+// +   store i32 23, ptr %value.addr.i, align 4
+// +   %17 = load ptr, ptr %destination.addr.i, align 8
+// +   %18 = load i32, ptr %value.addr.i, align 4
+// +   call void @_ZN9CxxObjectC2Ei(ptr noundef nonnull align 4 dereferenceable(4) %17, i32 noundef %18)
+// +   call void @"_Slifecycle::borrow(in CxxObject)"(ptr align 4 dereferenceable(4) %1)
+// +   call void @"_Slifecycle::CxxObject::init() -> CxxObject"(ptr sret([4 x i8]) %14)
+// +   call void @"_Slifecycle::take(CxxObject)"(ptr align 4 dereferenceable(4) %14)
+// +   call void @"_Slifecycle::Outer::init() -> Outer"(ptr sret([4 x i8]) %15)
+// +   call void @"_Slifecycle::take_outer(Outer)"(ptr align 4 dereferenceable(4) %15)
+// +   call void @"_Slifecycle::CxxOverloaded::init(bool) -> CxxOverloaded"(ptr sret([4 x i8]) %4, i1 noundef zeroext true)
+// +   store i32 0, ptr %5, align 4
+// +   call void @"_Slifecycle::CxxReference::init(i32^) -> CxxReference"(ptr sret([8 x i8]) %6, ptr noundef align 4 dereferenceable(4) %5)
+// +   call void @"_Slifecycle::CxxTrivial::init() -> CxxTrivial"(ptr sret([8 x i8]) %7)
+// +   call void @"_Slifecycle::CxxDerived::init(i32) -> CxxDerived"(ptr sret([32 x i8]) %8, i32 noundef 7)
+// +   call void @"_Slifecycle::CxxHidden::init() -> CxxHidden"(ptr sret([4 x i8]) %9)
+// +   call void @"_Slifecycle::Outer::init() -> Outer"(ptr sret([4 x i8]) %10)
+// +   call void @"_Slifecycle::CxxObject::init(i32) -> CxxObject"(ptr sret([4 x i8]) %11, i32 noundef 2)
+// +   call void @"_Slifecycle::CxxObject::init() -> CxxObject"(ptr sret([4 x i8]) %12)
+// +   %19 = getelementptr inbounds nuw i8, ptr %12, i32 4
+// +   br label %20
+// +
+// + 20:                                               ; preds = %23, %0
+// +   %21 = phi i64 [ %26, %23 ], [ 0, %0 ]
+// +   %22 = icmp eq i64 %21, 1
+// +   br i1 %22, label %27, label %23
+// +
+// + 23:                                               ; preds = %20
+// +   %24 = mul nuw i64 %21, 4
+// +   %25 = getelementptr inbounds nuw i8, ptr %19, i64 %24
+// +   call void @"_Slifecycle::CxxObject::init() -> CxxObject"(ptr sret([4 x i8]) %25)
+// +   %26 = add i64 %21, 1
+// +   br label %20
+// +
+// + 27:                                               ; preds = %20
+// +   call void @"_Slifecycle::CxxObject::init(i32) -> CxxObject"(ptr sret([4 x i8]) %13, i32 noundef 4)
+// +   %28 = getelementptr inbounds nuw i8, ptr %13, i32 4
+// +   store i8 -1, ptr %28, align 1
+// +   %29 = getelementptr inbounds nuw i8, ptr %13, i32 4
+// +   %30 = load i8, ptr %29, align 1
+// +   %31 = trunc i8 %30 to i1
+// +   br i1 %31, label %32, label %33
+// +
+// + 32:                                               ; preds = %27
+// +   call void @"_Slifecycle::CxxObject::delete(inout CxxObject)"(ptr %13)
+// +   br label %33
+// +
+// + 33:                                               ; preds = %37, %32, %27
+// +   %34 = phi i64 [ %39, %37 ], [ 4, %32 ], [ 4, %27 ]
+// +   %35 = getelementptr inbounds nuw i8, ptr %12, i64 %34
+// +   call void @"_Slifecycle::CxxObject::delete(inout CxxObject)"(ptr %35)
+// +   %36 = icmp eq i64 %34, 0
+// +   br i1 %36, label %51, label %37
+// +
+// + 37:                                               ; preds = %33
+// +   %38 = call { i64, i1 } @llvm.sadd.with.overflow.i64(i64 %34, i64 -4)
+// +   %39 = extractvalue { i64, i1 } %38, 0
+// +   %40 = extractvalue { i64, i1 } %38, 1
+// +   br i1 %40, label %41, label %33
+// +
+// + 41:                                               ; preds = %37
+// +   store ptr @__srcc_str.2, ptr %16, align 8
+// +   %42 = getelementptr inbounds nuw i8, ptr %16, i32 8
+// +   store i64 17, ptr %42, align 8
+// +   %43 = getelementptr inbounds nuw i8, ptr %16, i32 16
+// +   store i64 25, ptr %43, align 8
+// +   %44 = getelementptr inbounds nuw i8, ptr %16, i32 24
+// +   store i64 5, ptr %44, align 8
+// +   %45 = getelementptr inbounds nuw i8, ptr %16, i32 32
+// +   store ptr @__srcc_str.0, ptr %45, align 8
+// +   %46 = getelementptr inbounds nuw i8, ptr %45, i32 8
+// +   store i64 1, ptr %46, align 8
+// +   %47 = getelementptr inbounds nuw i8, ptr %16, i32 48
+// +   store ptr @__srcc_str.1, ptr %47, align 8
+// +   %48 = getelementptr inbounds nuw i8, ptr %47, i32 8
+// +   store i64 16, ptr %48, align 8
+// +   %49 = getelementptr inbounds nuw i8, ptr %16, i32 64
+// +   store ptr null, ptr %49, align 8
+// +   %50 = getelementptr inbounds nuw i8, ptr %49, i32 8
+// +   store ptr null, ptr %50, align 8
+// +   call void @__src_int_arith_error(ptr %16)
+// +   unreachable
+// +
+// + 51:                                               ; preds = %33
+// +   call void @"_Slifecycle::Outer::delete(inout Outer)"(ptr %11)
+// +   call void @"_Slifecycle::Outer::delete(inout Outer)"(ptr %10)
+// +   call void @"_Slifecycle::CxxHidden::delete(inout CxxHidden)"(ptr %9)
+// +   call void @"_Slifecycle::CxxDerived::delete(inout CxxDerived)"(ptr %8)
+// +   call void @"_Slifecycle::CxxTrivial::delete(inout CxxTrivial)"(ptr %7)
+// +   call void @"_Slifecycle::CxxReference::delete(inout CxxReference)"(ptr %6)
+// +   call void @"_Slifecycle::CxxOverloaded::delete(inout CxxOverloaded)"(ptr %4)
+// +   call void @"_Slifecycle::CxxObject::delete(inout CxxObject)"(ptr %3)
+// +   call void @"_Slifecycle::CxxObject::delete(inout CxxObject)"(ptr %2)
+// +   call void @"_Slifecycle::CxxObject::delete(inout CxxObject)"(ptr %1)
+// +   ret void
+// + }
+// +
+// + ; Function Attrs: noinline nounwind optnone uwtable
+// + define void @"_Slifecycle::Outer::init() -> Outer"(ptr sret([4 x i8]) %0) #1 {
+// +   call void @"_Slifecycle::CxxObject::init() -> CxxObject"(ptr sret([4 x i8]) %0)
+// +   ret void
+// + }
+// +
+// + ; Function Attrs: noinline nounwind optnone uwtable
+// + define linkonce_odr void @"_Slifecycle::CxxOverloaded::init(bool) -> CxxOverloaded"(ptr sret([4 x i8]) %0, i1 noundef zeroext %1) #1 personality ptr @__gxx_personality_v0 {
+// +   %__destination.addr.i = alloca ptr, align 8
+// +   %__arg0.addr.i = alloca i8, align 1
+// +   %3 = alloca i8, i64 1, align 1
+// +   %4 = sext i1 %1 to i8
+// +   store i8 %4, ptr %3, align 1
+// +   %5 = load i8, ptr %3, align 1
+// +   %6 = trunc i8 %5 to i1
+// +   store ptr %0, ptr %__destination.addr.i, align 8
+// +   %storedv.i = zext i1 %6 to i8
+// +   store i8 %storedv.i, ptr %__arg0.addr.i, align 1
+// +   %7 = load ptr, ptr %__destination.addr.i, align 8
+// +   %8 = load i8, ptr %__arg0.addr.i, align 1
+// +   %loadedv.i = icmp ne i8 %8, 0
+// +   invoke void @_ZN13CxxOverloadedC2Eb(ptr noundef nonnull align 4 dereferenceable(4) %7, i1 noundef zeroext %loadedv.i)
+// +           to label %__srcc_cxx_glue__ZN13CxxOverloadedC1Eb.exit unwind label %terminate.lpad.i
+// +
+// + terminate.lpad.i:                                 ; preds = %2
+// +   %9 = landingpad { ptr, i32 }
+// +           catch ptr null
+// +   %10 = extractvalue { ptr, i32 } %9, 0
+// +   call void @__clang_call_terminate(ptr %10) #9
+// +   unreachable
+// +
+// + __srcc_cxx_glue__ZN13CxxOverloadedC1Eb.exit:      ; preds = %2
+// +   ret void
+// + }
+// +
+// + ; Function Attrs: noinline nounwind optnone uwtable
+// + define linkonce_odr void @"_Slifecycle::CxxReference::init(i32^) -> CxxReference"(ptr sret([8 x i8]) %0, ptr noundef align 4 dereferenceable(4) %1) #1 personality ptr @__gxx_personality_v0 {
+// +   %__destination.addr.i = alloca ptr, align 8
+// +   %__arg0.addr.i = alloca ptr, align 8
+// +   %3 = alloca i8, i64 8, align 8
+// +   store ptr %1, ptr %3, align 8
+// +   %4 = load ptr, ptr %3, align 8
+// +   store ptr %0, ptr %__destination.addr.i, align 8
+// +   store ptr %4, ptr %__arg0.addr.i, align 8
+// +   %5 = load ptr, ptr %__destination.addr.i, align 8
+// +   %6 = load ptr, ptr %__arg0.addr.i, align 8
+// +   invoke void @_ZN12CxxReferenceC2ERi(ptr noundef nonnull align 8 dereferenceable(8) %5, ptr noundef nonnull align 4 dereferenceable(4) %6)
+// +           to label %__srcc_cxx_glue__ZN12CxxReferenceC1ERi.exit unwind label %terminate.lpad.i
+// +
+// + terminate.lpad.i:                                 ; preds = %2
+// +   %7 = landingpad { ptr, i32 }
+// +           catch ptr null
+// +   %8 = extractvalue { ptr, i32 } %7, 0
+// +   call void @__clang_call_terminate(ptr %8) #9
+// +   unreachable
+// +
+// + __srcc_cxx_glue__ZN12CxxReferenceC1ERi.exit:      ; preds = %2
+// +   ret void
+// + }
+// +
+// + ; Function Attrs: noinline nounwind optnone uwtable
+// + define linkonce_odr void @"_Slifecycle::CxxTrivial::init() -> CxxTrivial"(ptr sret([8 x i8]) %0) #1 {
+// +   %__destination.addr.i = alloca ptr, align 8
+// +   store ptr %0, ptr %__destination.addr.i, align 8
+// +   %2 = load ptr, ptr %__destination.addr.i, align 8
+// +   call void @llvm.memset.p0.i64(ptr align 4 %2, i8 0, i64 8, i1 false)
+// +   ret void
+// + }
+// +
+// + ; Function Attrs: noinline nounwind optnone uwtable
+// + define linkonce_odr void @"_Slifecycle::CxxDerived::init(i32) -> CxxDerived"(ptr sret([32 x i8]) %0, i32 noundef %1) #1 {
+// +   %__destination.addr.i = alloca ptr, align 8
+// +   %__arg0.addr.i = alloca i32, align 4
+// +   %3 = alloca i8, i64 4, align 4
+// +   store i32 %1, ptr %3, align 4
+// +   %4 = load i32, ptr %3, align 4
+// +   store ptr %0, ptr %__destination.addr.i, align 8
+// +   store i32 %4, ptr %__arg0.addr.i, align 4
+// +   %5 = load ptr, ptr %__destination.addr.i, align 8
+// +   %6 = load i32, ptr %__arg0.addr.i, align 4
+// +   call void @_ZN10CxxDerivedC1Ei(ptr noundef nonnull align 8 dereferenceable(12) %5, i32 noundef %6)
+// +   ret void
+// + }
+// +
+// + ; Function Attrs: noinline nounwind optnone uwtable
+// + define linkonce_odr void @"_Slifecycle::CxxHidden::init() -> CxxHidden"(ptr sret([4 x i8]) %0) #1 {
+// +   %__destination.addr.i = alloca ptr, align 8
+// +   store ptr %0, ptr %__destination.addr.i, align 8
+// +   %2 = load ptr, ptr %__destination.addr.i, align 8
+// +   call void @llvm.memset.p0.i64(ptr align 4 %2, i8 0, i64 4, i1 false)
+// +   call void @_ZN9CxxHiddenC2Ev(ptr noundef nonnull align 4 dereferenceable(4) %2) #10
+// +   ret void
+// + }
+// +
+// + ; Function Attrs: noinline nounwind optnone uwtable
+// + define linkonce_odr void @"_Slifecycle::CxxHidden::delete(inout CxxHidden)"(ptr align 4 dereferenceable(4) %0) #1 {
+// +   %__destination.addr.i = alloca ptr, align 8
+// +   store ptr %0, ptr %__destination.addr.i, align 8
+// +   %2 = load ptr, ptr %__destination.addr.i, align 8
+// +   ret void
+// + }
+// +
+// + ; Function Attrs: noinline nounwind optnone uwtable
+// + define linkonce_odr void @"_Slifecycle::CxxDerived::delete(inout CxxDerived)"(ptr align 8 dereferenceable(32) %0) #1 {
+// +   %__destination.addr.i = alloca ptr, align 8
+// +   store ptr %0, ptr %__destination.addr.i, align 8
+// +   %2 = load ptr, ptr %__destination.addr.i, align 8
+// +   call void @_ZN10CxxDerivedD1Ev(ptr noundef nonnull align 8 dereferenceable(12) %2) #10
+// +   ret void
+// + }
+// +
+// + ; Function Attrs: noinline nounwind optnone uwtable
+// + define linkonce_odr void @"_Slifecycle::CxxTrivial::delete(inout CxxTrivial)"(ptr align 4 dereferenceable(8) %0) #1 {
+// +   %__destination.addr.i = alloca ptr, align 8
+// +   store ptr %0, ptr %__destination.addr.i, align 8
+// +   %2 = load ptr, ptr %__destination.addr.i, align 8
+// +   ret void
+// + }
+// +
+// + ; Function Attrs: noinline nounwind optnone uwtable
+// + define linkonce_odr void @"_Slifecycle::CxxReference::delete(inout CxxReference)"(ptr align 8 dereferenceable(8) %0) #1 {
+// +   %__destination.addr.i = alloca ptr, align 8
+// +   store ptr %0, ptr %__destination.addr.i, align 8
+// +   %2 = load ptr, ptr %__destination.addr.i, align 8
+// +   call void @_ZN12CxxReferenceD2Ev(ptr noundef nonnull align 8 dead_on_return(8) dereferenceable(8) %2) #10
+// +   ret void
+// + }
+// +
+// + ; Function Attrs: noinline nounwind optnone uwtable
+// + define linkonce_odr void @"_Slifecycle::CxxOverloaded::delete(inout CxxOverloaded)"(ptr align 4 dereferenceable(4) %0) #1 {
+// +   %__destination.addr.i = alloca ptr, align 8
+// +   store ptr %0, ptr %__destination.addr.i, align 8
+// +   %2 = load ptr, ptr %__destination.addr.i, align 8
+// +   ret void
+// + }
+// +
+// + ; Function Attrs: noinline nounwind optnone uwtable
+// + define linkonce_odr void @"_Slifecycle::CxxOverloaded::init(i32) -> CxxOverloaded"(ptr sret([4 x i8]) %0, i32 noundef %1) #1 personality ptr @__gxx_personality_v0 {
+// +   %__destination.addr.i = alloca ptr, align 8
+// +   %__arg0.addr.i = alloca i32, align 4
+// +   %3 = alloca i8, i64 4, align 4
+// +   store i32 %1, ptr %3, align 4
+// +   %4 = load i32, ptr %3, align 4
+// +   store ptr %0, ptr %__destination.addr.i, align 8
+// +   store i32 %4, ptr %__arg0.addr.i, align 4
+// +   %5 = load ptr, ptr %__destination.addr.i, align 8
+// +   %6 = load i32, ptr %__arg0.addr.i, align 4
+// +   invoke void @_ZN13CxxOverloadedC2Ei(ptr noundef nonnull align 4 dereferenceable(4) %5, i32 noundef %6)
+// +           to label %__srcc_cxx_glue__ZN13CxxOverloadedC1Ei.exit unwind label %terminate.lpad.i
+// +
+// + terminate.lpad.i:                                 ; preds = %2
+// +   %7 = landingpad { ptr, i32 }
+// +           catch ptr null
+// +   %8 = extractvalue { ptr, i32 } %7, 0
+// +   call void @__clang_call_terminate(ptr %8) #9
+// +   unreachable
+// +
+// + __srcc_cxx_glue__ZN13CxxOverloadedC1Ei.exit:      ; preds = %2
+// +   ret void
+// + }
+// +
+// + declare void @__src_int_arith_error(ptr)
+// +
+// + ; Function Attrs: nocallback nocreateundeforpoison nofree nosync nounwind speculatable willreturn memory(none)
+// + declare { i64, i1 } @llvm.sadd.with.overflow.i64(i64, i64) #2
+// +
+// + ; Function Attrs: alwaysinline optnone uwtable
+// + define linkonce_odr dso_local void @_Z19annotated_constructPvi(ptr noundef %destination, i32 noundef %value) #3 comdat {
+// + entry:
+// +   %destination.addr = alloca ptr, align 8
+// +   %value.addr = alloca i32, align 4
+// +   store ptr %destination, ptr %destination.addr, align 8
+// +   store i32 %value, ptr %value.addr, align 4
+// +   %0 = load ptr, ptr %destination.addr, align 8
+// +   %1 = load i32, ptr %value.addr, align 4
+// +   call void @_ZN9CxxObjectC2Ei(ptr noundef nonnull align 4 dereferenceable(4) %0, i32 noundef %1)
+// +   ret void
+// + }
+// +
+// + ; Function Attrs: alwaysinline nounwind optnone uwtable
+// + define linkonce_odr dso_local void @__srcc_cxx_glue__ZN13CxxOverloadedC1Ei(ptr noundef %__destination, i32 noundef %__arg0) #4 comdat personality ptr @__gxx_personality_v0 {
+// + entry:
+// +   %__destination.addr = alloca ptr, align 8
+// +   %__arg0.addr = alloca i32, align 4
+// +   store ptr %__destination, ptr %__destination.addr, align 8
+// +   store i32 %__arg0, ptr %__arg0.addr, align 4
+// +   %0 = load ptr, ptr %__destination.addr, align 8
+// +   %1 = load i32, ptr %__arg0.addr, align 4
+// +   invoke void @_ZN13CxxOverloadedC2Ei(ptr noundef nonnull align 4 dereferenceable(4) %0, i32 noundef %1)
+// +           to label %invoke.cont unwind label %terminate.lpad
+// +
+// + invoke.cont:                                      ; preds = %entry
+// +   ret void
+// +
+// + terminate.lpad:                                   ; preds = %entry
+// +   %2 = landingpad { ptr, i32 }
+// +           catch ptr null
+// +   %3 = extractvalue { ptr, i32 } %2, 0
+// +   call void @__clang_call_terminate(ptr %3) #9
+// +   unreachable
+// + }
+// +
+// + ; Function Attrs: alwaysinline nounwind optnone uwtable
+// + define linkonce_odr dso_local void @__srcc_cxx_glue__ZN13CxxOverloadedC1Eb(ptr noundef %__destination, i1 noundef zeroext %__arg0) #4 comdat personality ptr @__gxx_personality_v0 {
+// + entry:
+// +   %__destination.addr = alloca ptr, align 8
+// +   %__arg0.addr = alloca i8, align 1
+// +   store ptr %__destination, ptr %__destination.addr, align 8
+// +   %storedv = zext i1 %__arg0 to i8
+// +   store i8 %storedv, ptr %__arg0.addr, align 1
+// +   %0 = load ptr, ptr %__destination.addr, align 8
+// +   %1 = load i8, ptr %__arg0.addr, align 1
+// +   %loadedv = icmp ne i8 %1, 0
+// +   invoke void @_ZN13CxxOverloadedC2Eb(ptr noundef nonnull align 4 dereferenceable(4) %0, i1 noundef zeroext %loadedv)
+// +           to label %invoke.cont unwind label %terminate.lpad
+// +
+// + invoke.cont:                                      ; preds = %entry
+// +   ret void
+// +
+// + terminate.lpad:                                   ; preds = %entry
+// +   %2 = landingpad { ptr, i32 }
+// +           catch ptr null
+// +   %3 = extractvalue { ptr, i32 } %2, 0
+// +   call void @__clang_call_terminate(ptr %3) #9
+// +   unreachable
+// + }
+// +
+// + ; Function Attrs: alwaysinline nounwind optnone uwtable
+// + define linkonce_odr dso_local void @__srcc_cxx_glue__ZN12CxxReferenceC1ERi(ptr noundef %__destination, ptr noundef %__arg0) #4 comdat personality ptr @__gxx_personality_v0 {
+// + entry:
+// +   %__destination.addr = alloca ptr, align 8
+// +   %__arg0.addr = alloca ptr, align 8
+// +   store ptr %__destination, ptr %__destination.addr, align 8
+// +   store ptr %__arg0, ptr %__arg0.addr, align 8
+// +   %0 = load ptr, ptr %__destination.addr, align 8
+// +   %1 = load ptr, ptr %__arg0.addr, align 8
+// +   invoke void @_ZN12CxxReferenceC2ERi(ptr noundef nonnull align 8 dereferenceable(8) %0, ptr noundef nonnull align 4 dereferenceable(4) %1)
+// +           to label %invoke.cont unwind label %terminate.lpad
+// +
+// + invoke.cont:                                      ; preds = %entry
+// +   ret void
+// +
+// + terminate.lpad:                                   ; preds = %entry
+// +   %2 = landingpad { ptr, i32 }
+// +           catch ptr null
+// +   %3 = extractvalue { ptr, i32 } %2, 0
+// +   call void @__clang_call_terminate(ptr %3) #9
+// +   unreachable
+// + }
+// +
+// + ; Function Attrs: alwaysinline nounwind optnone uwtable
+// + define linkonce_odr dso_local void @__srcc_cxx_glue__ZN10CxxTrivialC1Ev(ptr noundef %__destination) #4 comdat {
+// + entry:
+// +   %__destination.addr = alloca ptr, align 8
+// +   store ptr %__destination, ptr %__destination.addr, align 8
+// +   %0 = load ptr, ptr %__destination.addr, align 8
+// +   call void @llvm.memset.p0.i64(ptr align 4 %0, i8 0, i64 8, i1 false)
+// +   ret void
+// + }
+// +
+// + ; Function Attrs: alwaysinline nounwind optnone uwtable
+// + define linkonce_odr dso_local void @__srcc_cxx_glue__ZN10CxxDerivedC1Ei(ptr noundef %__destination, i32 noundef %__arg0) #4 comdat {
+// + entry:
+// +   %__destination.addr = alloca ptr, align 8
+// +   %__arg0.addr = alloca i32, align 4
+// +   store ptr %__destination, ptr %__destination.addr, align 8
+// +   store i32 %__arg0, ptr %__arg0.addr, align 4
+// +   %0 = load ptr, ptr %__destination.addr, align 8
+// +   %1 = load i32, ptr %__arg0.addr, align 4
+// +   call void @_ZN10CxxDerivedC1Ei(ptr noundef nonnull align 8 dereferenceable(12) %0, i32 noundef %1)
+// +   ret void
+// + }
+// +
+// + ; Function Attrs: alwaysinline nounwind optnone uwtable
+// + define linkonce_odr dso_local void @__srcc_cxx_glue__ZN9CxxHiddenC1Ev(ptr noundef %__destination) #4 comdat {
+// + entry:
+// +   %__destination.addr = alloca ptr, align 8
+// +   store ptr %__destination, ptr %__destination.addr, align 8
+// +   %0 = load ptr, ptr %__destination.addr, align 8
+// +   call void @llvm.memset.p0.i64(ptr align 4 %0, i8 0, i64 4, i1 false)
+// +   call void @_ZN9CxxHiddenC2Ev(ptr noundef nonnull align 4 dereferenceable(4) %0) #10
+// +   ret void
+// + }
+// +
+// + ; Function Attrs: alwaysinline nounwind optnone uwtable
+// + define linkonce_odr dso_local void @__srcc_cxx_glue__ZN9CxxObjectC1Ev(ptr noundef %__destination) #4 comdat {
+// + entry:
+// +   %__destination.addr = alloca ptr, align 8
+// +   store ptr %__destination, ptr %__destination.addr, align 8
+// +   %0 = load ptr, ptr %__destination.addr, align 8
+// +   call void @llvm.memset.p0.i64(ptr align 4 %0, i8 0, i64 4, i1 false)
+// +   call void @_ZN9CxxObjectC2Ev(ptr noundef nonnull align 4 dereferenceable(4) %0) #10
+// +   ret void
+// + }
+// +
+// + ; Function Attrs: alwaysinline nounwind optnone uwtable
+// + define linkonce_odr dso_local void @__srcc_cxx_glue__ZN9CxxObjectC1Ei(ptr noundef %__destination, i32 noundef %__arg0) #4 comdat personality ptr @__gxx_personality_v0 {
+// + entry:
+// +   %__destination.addr = alloca ptr, align 8
+// +   %__arg0.addr = alloca i32, align 4
+// +   store ptr %__destination, ptr %__destination.addr, align 8
+// +   store i32 %__arg0, ptr %__arg0.addr, align 4
+// +   %0 = load ptr, ptr %__destination.addr, align 8
+// +   %1 = load i32, ptr %__arg0.addr, align 4
+// +   invoke void @_ZN9CxxObjectC2Ei(ptr noundef nonnull align 4 dereferenceable(4) %0, i32 noundef %1)
+// +           to label %invoke.cont unwind label %terminate.lpad
+// +
+// + invoke.cont:                                      ; preds = %entry
+// +   ret void
+// +
+// + terminate.lpad:                                   ; preds = %entry
+// +   %2 = landingpad { ptr, i32 }
+// +           catch ptr null
+// +   %3 = extractvalue { ptr, i32 } %2, 0
+// +   call void @__clang_call_terminate(ptr %3) #9
+// +   unreachable
+// + }
+// +
+// + declare i32 @__gxx_personality_v0(...)
+// +
+// + ; Function Attrs: noinline nounwind optnone uwtable
+// + define linkonce_odr dso_local void @_ZN9CxxObjectC2Ei(ptr noundef nonnull align 4 dereferenceable(4) %this, i32 noundef %x) unnamed_addr #1 comdat align 2 {
+// + entry:
+// +   %this.addr = alloca ptr, align 8
+// +   %x.addr = alloca i32, align 4
+// +   store ptr %this, ptr %this.addr, align 8
+// +   store i32 %x, ptr %x.addr, align 4
+// +   %this1 = load ptr, ptr %this.addr, align 8
+// +   %value = getelementptr inbounds nuw %struct.CxxObject, ptr %this1, i32 0, i32 0
+// +   %0 = load i32, ptr %x.addr, align 4
+// +   store i32 %0, ptr %value, align 4
+// +   ret void
+// + }
+// +
+// + ; Function Attrs: noinline noreturn nounwind optnone uwtable
+// + define linkonce_odr hidden void @__clang_call_terminate(ptr noundef %0) #5 comdat {
+// +   %2 = call ptr @__cxa_begin_catch(ptr %0) #10
+// +   call void @_ZSt9terminatev() #9
+// +   unreachable
+// + }
+// +
+// + declare ptr @__cxa_begin_catch(ptr)
+// +
+// + ; Function Attrs: cold noreturn nounwind
+// + declare void @_ZSt9terminatev() #6
+// +
+// + ; Function Attrs: nocallback nofree nosync nounwind willreturn memory(argmem: write)
+// + declare void @llvm.memset.p0.i64(ptr writeonly captures(none), i8, i64, i1 immarg) #7
+// +
+// + ; Function Attrs: noinline nounwind optnone uwtable
+// + define linkonce_odr dso_local void @_ZN9CxxObjectC2Ev(ptr noundef nonnull align 4 dereferenceable(4) %this) unnamed_addr #1 comdat align 2 {
+// + entry:
+// +   %this.addr = alloca ptr, align 8
+// +   store ptr %this, ptr %this.addr, align 8
+// +   %this1 = load ptr, ptr %this.addr, align 8
+// +   %value = getelementptr inbounds nuw %struct.CxxObject, ptr %this1, i32 0, i32 0
+// +   store i32 17, ptr %value, align 4
+// +   ret void
+// + }
+// +
+// + ; Function Attrs: noinline nounwind optnone uwtable
+// + define linkonce_odr dso_local void @_ZN9CxxHiddenC2Ev(ptr noundef nonnull align 4 dereferenceable(4) %this) unnamed_addr #1 comdat align 2 {
+// + entry:
+// +   %this.addr = alloca ptr, align 8
+// +   store ptr %this, ptr %this.addr, align 8
+// +   %this1 = load ptr, ptr %this.addr, align 8
+// +   %hidden = getelementptr inbounds nuw %struct.CxxObject, ptr %this1, i32 0, i32 0
+// +   store i32 5, ptr %hidden, align 4
+// +   ret void
+// + }
+// +
+// + ; Function Attrs: noinline nounwind optnone uwtable
+// + define linkonce_odr dso_local void @_ZN10CxxDerivedC1Ei(ptr noundef nonnull align 8 dereferenceable(12) %this, i32 noundef %x) unnamed_addr #1 comdat align 2 {
+// + entry:
+// +   %this.addr = alloca ptr, align 8
+// +   %x.addr = alloca i32, align 4
+// +   store ptr %this, ptr %this.addr, align 8
+// +   store i32 %x, ptr %x.addr, align 4
+// +   %this1 = load ptr, ptr %this.addr, align 8
+// +   %0 = getelementptr inbounds i8, ptr %this1, i64 16
+// +   call void @_ZN7CxxBaseC2Ev(ptr noundef nonnull align 8 dereferenceable(12) %0) #10
+// +   store ptr getelementptr inbounds inrange(-24, 16) (i8, ptr @_ZTV10CxxDerived, i64 24), ptr %this1, align 8
+// +   %add.ptr = getelementptr inbounds i8, ptr %this1, i64 16
+// +   store ptr getelementptr inbounds inrange(-24, 16) (i8, ptr @_ZTV10CxxDerived, i64 64), ptr %add.ptr, align 8
+// +   %value = getelementptr inbounds nuw %struct.CxxDerived, ptr %this1, i32 0, i32 1
+// +   %1 = load i32, ptr %x.addr, align 4
+// +   store i32 %1, ptr %value, align 8
+// +   ret void
+// + }
+// +
+// + ; Function Attrs: noinline nounwind optnone uwtable
+// + define linkonce_odr dso_local void @_ZN7CxxBaseC2Ev(ptr noundef nonnull align 8 dereferenceable(12) %this) unnamed_addr #1 comdat align 2 {
+// + entry:
+// +   %this.addr = alloca ptr, align 8
+// +   store ptr %this, ptr %this.addr, align 8
+// +   %this1 = load ptr, ptr %this.addr, align 8
+// +   store ptr getelementptr inbounds inrange(-16, 16) (i8, ptr @_ZTV7CxxBase, i64 16), ptr %this1, align 8
+// +   %base = getelementptr inbounds nuw %struct.CxxBase, ptr %this1, i32 0, i32 1
+// +   store i32 3, ptr %base, align 8
+// +   ret void
+// + }
+// +
+// + ; Function Attrs: noinline nounwind optnone uwtable
+// + define linkonce_odr dso_local void @_ZN10CxxDerivedD1Ev(ptr noundef nonnull align 8 dereferenceable(12) %this) unnamed_addr #1 comdat align 2 {
+// + entry:
+// +   %this.addr = alloca ptr, align 8
+// +   store ptr %this, ptr %this.addr, align 8
+// +   %this1 = load ptr, ptr %this.addr, align 8
+// +   call void @_ZN10CxxDerivedD2Ev(ptr noundef nonnull align 8 dereferenceable(12) %this1, ptr noundef @_ZTT10CxxDerived) #10
+// +   %0 = getelementptr inbounds i8, ptr %this1, i64 16
+// +   call void @_ZN7CxxBaseD2Ev(ptr noundef nonnull align 8 dead_on_return(12) dereferenceable(12) %0) #10
+// +   ret void
+// + }
+// +
+// + ; Function Attrs: noinline nounwind optnone uwtable
+// + define linkonce_odr dso_local void @_ZN10CxxDerivedD0Ev(ptr noundef nonnull align 8 dereferenceable(12) %this) unnamed_addr #1 comdat align 2 {
+// + entry:
+// +   %this.addr = alloca ptr, align 8
+// +   store ptr %this, ptr %this.addr, align 8
+// +   %this1 = load ptr, ptr %this.addr, align 8
+// +   call void @_ZN10CxxDerivedD1Ev(ptr noundef nonnull align 8 dereferenceable(12) %this1) #10
+// +   call void @_ZdlPvm(ptr noundef %this1, i64 noundef 32) #11
+// +   ret void
+// + }
+// +
+// + ; Function Attrs: noinline nounwind optnone uwtable
+// + define linkonce_odr dso_local void @_ZTv0_n24_N10CxxDerivedD1Ev(ptr noundef %this) unnamed_addr #1 comdat align 2 {
+// + entry:
+// +   %this.addr = alloca ptr, align 8
+// +   store ptr %this, ptr %this.addr, align 8
+// +   %this1 = load ptr, ptr %this.addr, align 8
+// +   %vtable = load ptr, ptr %this1, align 8
+// +   %0 = getelementptr inbounds i8, ptr %vtable, i64 -24
+// +   %1 = load i64, ptr %0, align 8
+// +   %2 = getelementptr inbounds i8, ptr %this1, i64 %1
+// +   tail call void @_ZN10CxxDerivedD1Ev(ptr noundef nonnull align 8 dereferenceable(12) %2) #10
+// +   ret void
+// + }
+// +
+// + ; Function Attrs: noinline nounwind optnone uwtable
+// + define linkonce_odr dso_local void @_ZTv0_n24_N10CxxDerivedD0Ev(ptr noundef %this) unnamed_addr #1 comdat align 2 {
+// + entry:
+// +   %this.addr = alloca ptr, align 8
+// +   store ptr %this, ptr %this.addr, align 8
+// +   %this1 = load ptr, ptr %this.addr, align 8
+// +   %vtable = load ptr, ptr %this1, align 8
+// +   %0 = getelementptr inbounds i8, ptr %vtable, i64 -24
+// +   %1 = load i64, ptr %0, align 8
+// +   %2 = getelementptr inbounds i8, ptr %this1, i64 %1
+// +   tail call void @_ZN10CxxDerivedD0Ev(ptr noundef nonnull align 8 dereferenceable(12) %2) #10
+// +   ret void
+// + }
+// +
+// + ; Function Attrs: nobuiltin nounwind
+// + declare void @_ZdlPvm(ptr noundef, i64 noundef) #8
+// +
+// + ; Function Attrs: noinline nounwind optnone uwtable
+// + define linkonce_odr dso_local void @_ZN10CxxDerivedD2Ev(ptr noundef nonnull align 8 dereferenceable(12) %this, ptr noundef %vtt) unnamed_addr #1 comdat align 2 {
+// + entry:
+// +   %this.addr = alloca ptr, align 8
+// +   %vtt.addr = alloca ptr, align 8
+// +   store ptr %this, ptr %this.addr, align 8
+// +   store ptr %vtt, ptr %vtt.addr, align 8
+// +   %this1 = load ptr, ptr %this.addr, align 8
+// +   %vtt2 = load ptr, ptr %vtt.addr, align 8
+// +   ret void
+// + }
+// +
+// + ; Function Attrs: noinline nounwind optnone uwtable
+// + define linkonce_odr dso_local void @_ZN7CxxBaseD2Ev(ptr noundef nonnull align 8 dead_on_return(12) dereferenceable(12) %this) unnamed_addr #1 comdat align 2 {
+// + entry:
+// +   %this.addr = alloca ptr, align 8
+// +   store ptr %this, ptr %this.addr, align 8
+// +   %this1 = load ptr, ptr %this.addr, align 8
+// +   ret void
+// + }
+// +
+// + ; Function Attrs: noinline nounwind optnone uwtable
+// + define linkonce_odr dso_local void @_ZN7CxxBaseD0Ev(ptr noundef nonnull align 8 dereferenceable(12) %this) unnamed_addr #1 comdat align 2 {
+// + entry:
+// +   %this.addr = alloca ptr, align 8
+// +   store ptr %this, ptr %this.addr, align 8
+// +   %this1 = load ptr, ptr %this.addr, align 8
+// +   call void @_ZN7CxxBaseD2Ev(ptr noundef nonnull align 8 dead_on_return(12) dereferenceable(12) %this1) #10
+// +   call void @_ZdlPvm(ptr noundef %this1, i64 noundef 16) #11
+// +   ret void
+// + }
+// +
+// + ; Function Attrs: noinline nounwind optnone uwtable
+// + define linkonce_odr dso_local void @_ZN12CxxReferenceC2ERi(ptr noundef nonnull align 8 dereferenceable(8) %this, ptr noundef nonnull align 4 dereferenceable(4) %x) unnamed_addr #1 comdat align 2 {
+// + entry:
+// +   %this.addr = alloca ptr, align 8
+// +   %x.addr = alloca ptr, align 8
+// +   store ptr %this, ptr %this.addr, align 8
+// +   store ptr %x, ptr %x.addr, align 8
+// +   %this1 = load ptr, ptr %this.addr, align 8
+// +   %value = getelementptr inbounds nuw %struct.CxxReference, ptr %this1, i32 0, i32 0
+// +   %0 = load ptr, ptr %x.addr, align 8, !nonnull !0, !align !1
+// +   store ptr %0, ptr %value, align 8
+// +   ret void
+// + }
+// +
+// + ; Function Attrs: noinline nounwind optnone uwtable
+// + define linkonce_odr dso_local void @_ZN13CxxOverloadedC2Eb(ptr noundef nonnull align 4 dereferenceable(4) %this, i1 noundef zeroext %x) unnamed_addr #1 comdat align 2 {
+// + entry:
+// +   %this.addr = alloca ptr, align 8
+// +   %x.addr = alloca i8, align 1
+// +   store ptr %this, ptr %this.addr, align 8
+// +   %storedv = zext i1 %x to i8
+// +   store i8 %storedv, ptr %x.addr, align 1
+// +   %this1 = load ptr, ptr %this.addr, align 8
+// +   %value = getelementptr inbounds nuw %struct.CxxObject, ptr %this1, i32 0, i32 0
+// +   %0 = load i8, ptr %x.addr, align 1
+// +   %loadedv = icmp ne i8 %0, 0
+// +   %1 = zext i1 %loadedv to i64
+// +   %cond = select i1 %loadedv, i32 1, i32 0
+// +   store i32 %cond, ptr %value, align 4
+// +   ret void
+// + }
+// +
+// + ; Function Attrs: noinline nounwind optnone uwtable
+// + define linkonce_odr dso_local void @_ZN13CxxOverloadedC2Ei(ptr noundef nonnull align 4 dereferenceable(4) %this, i32 noundef %x) unnamed_addr #1 comdat align 2 {
+// + entry:
+// +   %this.addr = alloca ptr, align 8
+// +   %x.addr = alloca i32, align 4
+// +   store ptr %this, ptr %this.addr, align 8
+// +   store i32 %x, ptr %x.addr, align 4
+// +   %this1 = load ptr, ptr %this.addr, align 8
+// +   %value = getelementptr inbounds nuw %struct.CxxObject, ptr %this1, i32 0, i32 0
+// +   %0 = load i32, ptr %x.addr, align 4
+// +   store i32 %0, ptr %value, align 4
+// +   ret void
+// + }
+// +
+// + ; Function Attrs: noinline nounwind optnone uwtable
+// + define linkonce_odr dso_local void @_ZN12CxxReferenceD2Ev(ptr noundef nonnull align 8 dead_on_return(8) dereferenceable(8) %this) unnamed_addr #1 comdat align 2 {
+// + entry:
+// +   %this.addr = alloca ptr, align 8
+// +   store ptr %this, ptr %this.addr, align 8
+// +   %this1 = load ptr, ptr %this.addr, align 8
+// +   %value = getelementptr inbounds nuw %struct.CxxReference, ptr %this1, i32 0, i32 0
+// +   %0 = load ptr, ptr %value, align 8
+// +   %1 = load i32, ptr %0, align 4
+// +   %inc = add nsw i32 %1, 1
+// +   store i32 %inc, ptr %0, align 4
+// +   ret void
+// + }
+// +
+// + ; Function Attrs: noinline nounwind optnone uwtable
+// + define linkonce_odr dso_local void @_ZN9CxxObjectD2Ev(ptr noundef nonnull align 4 dead_on_return(4) dereferenceable(4) %this) unnamed_addr #1 comdat align 2 {
+// + entry:
+// +   %this.addr = alloca ptr, align 8
+// +   store ptr %this, ptr %this.addr, align 8
+// +   %this1 = load ptr, ptr %this.addr, align 8
+// +   %value = getelementptr inbounds nuw %struct.CxxObject, ptr %this1, i32 0, i32 0
+// +   store i32 -1, ptr %value, align 4
+// +   ret void
+// + }
+// +
+// + attributes #0 = { noinline norecurse nounwind optnone uwtable "frame-pointer"="all" }
+// + attributes #1 = { noinline nounwind optnone uwtable "frame-pointer"="all" }
+// + attributes #2 = { nocallback nocreateundeforpoison nofree nosync nounwind speculatable willreturn memory(none) }
+// + attributes #3 = { alwaysinline optnone uwtable "frame-pointer"="all" }
+// + attributes #4 = { alwaysinline nounwind optnone uwtable "frame-pointer"="all" }
+// + attributes #5 = { noinline noreturn nounwind optnone uwtable "frame-pointer"="all" }
+// + attributes #6 = { cold noreturn nounwind "frame-pointer"="all" }
+// + attributes #7 = { nocallback nofree nosync nounwind willreturn memory(argmem: write) }
+// + attributes #8 = { nobuiltin nounwind "frame-pointer"="all" }
+// + attributes #9 = { noreturn nounwind }
+// + attributes #10 = { nounwind }
+// + attributes #11 = { builtin nounwind }
+// +
+// +

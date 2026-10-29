@@ -127,6 +127,15 @@ enum class srcc::CallingConvention : base::u8 {
     /// to care about the calling convention when writing function
     /// types if we had two different ones that were in common use.
     Native,
+
+    /// Procedure that is defined in C++ and acts as a wrapper for
+    /// a constructor invoked via placement-new. On the C++ side,
+    /// its first parameter is a 'void*' into which the object is
+    /// constructed. On the Source side, this first parameter is
+    /// absent and the signature appears to return the object as
+    /// an rvalue instead. When emitted, the rvalue destination
+    /// pointer is added as the first argument.
+    CXXConstructorWrapper,
 };
 
 enum class srcc::ValueCategory : base::u8 {

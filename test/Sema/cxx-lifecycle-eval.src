@@ -1,0 +1,7 @@
+// V %srcc --sema --verify -I test/inputs %s
+program test;
+import <cxx-lifecycle.h> as cpp;
+
+// Generated C++ glue is not available to the interpreter.
+// FIXME: Revisit this once we support calling C++ constexpr functions.
+eval { var object: cpp::CxxObject; } // expected-error: Failed to find symbol for FFI call to '__srcc_cxx_glue__ZN9CxxObjectC1Ev'

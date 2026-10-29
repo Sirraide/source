@@ -117,6 +117,8 @@ auto TypeBase::align(const Target& t) const -> Align { // clang-format off
 } // clang-format on
 
 bool TypeBase::pass_by_reference(const Target& t, Intent i) const {
+    if (not can_move()) return true;
+
     // Zero-sized types are passed by value.
     if (memory_size(t) == Size()) return false;
 
@@ -200,8 +202,15 @@ bool InitCheckHelper(const TypeBase* type) { // clang-format off
 
 bool TypeBase::can_copy() const {
     Type t = strip_arrays_and_optionals();
-    if (t->trivially_copyable()) return true;
-    return t->has_copy_proc();
+    if (auto record = dyn_cast<RecordType>(t); record and not record->layout().bits().can_copy)
+        return false;
+    return not t->requires_deletion() or t->has_copy_proc();
+}
+
+bool TypeBase::can_move() const {
+    auto type = strip_arrays_and_optionals();
+    if (auto record = dyn_cast<RecordType>(type)) return record->layout().bits().can_move;
+    return true;
 }
 
 bool TypeBase::can_init_from_no_args() const {
@@ -393,8 +402,7 @@ bool TypeBase::is_void() const {
 }
 
 bool TypeBase::move_is_copy() const {
-    // This will have to change once we have destructors.
-    return not requires_deletion();
+    return can_copy() and can_move() and not requires_deletion();
 }
 
 auto TypeBase::print() const -> SmallUnrenderedString {
@@ -825,10 +833,11 @@ auto ProcType::print(
 
     // Add attributes.
     if (has_c_varargs()) out += " varargs";
-    if (decl) {
-        if (cconv() != CallingConvention::Native and decl->mangling == Mangling::None)
-            out += " nomangle";
-    }
+    if (decl and decl->mangling == Mangling::None)  out += " nomangle";
+
+    // Add cconv.
+    if (cconv() != CallingConvention::Native)
+        Format(out, " cconv(%3({}%))", enchantum::to_string(cconv()));
 
     // Add return type and value category.
     if (not ret()->is_void()) Format(out, " -> {}", ret()->print_impl());
@@ -897,6 +906,7 @@ void RecordLayout::Builder::add_field(Type ty) {
     bits.contains_pointer |= ty->is_or_contains_pointer();
     bits.can_persist_as_bytes &= ty->can_persist_as_bytes(tu);
     bits.can_copy &= ty->can_copy();
+    bits.can_move &= ty->can_move();
 
     // Update props.
     props.must_define_delete |= ty->requires_deletion();
@@ -993,19 +1003,24 @@ void RecordType::set_special_member(Tk tok, ProcDecl* decl) {
 void RecordType::update_initialisation(
     TranslationUnit& tu,
     bool has_initialisers,
-    bool has_empty_initialiser
+    bool has_empty_initialiser,
+    bool allow_aggregate
 ) {
     Assert(is_canonical(), "Construction properties belong to the canonical record");
-    RecordLayout::Builder builder{tu};
-    for (auto field : scope()->fields()) builder.add_field(field->type);
-    auto [layout, props] = builder.build(has_initialisers, has_empty_initialiser);
+    auto bits = record_layout->bits();
+    bits.init_from_no_args = has_empty_initialiser or (not has_initialisers and bits.init_from_no_args);
+    if (has_initialisers) {
+        bits.literal_initialiser = allow_aggregate;
+        bits.zero_init = false;
+    }
+
     record_layout = RecordLayout::Get(
         tu,
         record_layout->field_offsets(),
         record_layout->size(),
         record_layout->array_size(),
         record_layout->align(),
-        layout->bits()
+        bits
     );
 }
 

@@ -1,0 +1,70 @@
+// V %srcc --sema --verify -I test/inputs %s
+program test;
+import <cxx-lifecycle.h> as cpp;
+
+struct Outer { item: cpp::CxxObject; }
+struct Nested { outer: Outer; }
+proc make = cpp::CxxObject(42);
+proc take (object: cpp::CxxObject) {} // expected-note: In argument to parameter 'object'
+proc borrow (in object: cpp::CxxObject) {}
+proc modify (inout object: cpp::CxxObject) {}
+proc output (out object: cpp::CxxObject) {}
+proc return_local -> cpp::CxxObject {
+    var object: cpp::CxxObject;
+    return object; // expected-error: Type 'CxxObject' is not movable
+}
+
+proc conditional (b: bool, in existing: cpp::CxxObject) -> cpp::CxxObject =
+    if b then cpp::CxxObject() else existing; // expected-error: Type 'CxxObject' is not movable
+
+proc run {
+    var object = cpp::CxxObject(x: 42);
+    var defaulted: cpp::CxxObject;
+    var annotated = cpp::annotated_construct(value: 23);
+    borrow(object);
+    modify(object);
+    output(object);
+    take(cpp::CxxObject());
+    take(object); // expected-error: Type 'CxxObject' is not movable
+    var moved = object; // expected-error: Type 'CxxObject' is not movable
+    var copied = copy object; // expected-error: Type 'CxxObject' is not copyable
+    object = cpp::CxxObject(1);
+    object = defaulted; // expected-error: Cannot assign value of type 'CxxObject' to 'CxxObject'
+    var raw_foreign: cpp::CxxObject = ::(1,); // expected-error: Cannot use raw initialisation for a struct defined in another module
+    var outer: Outer;
+    var nested: Nested;
+    var raw: Outer = ::(cpp::CxxObject(1),);
+    var aggregate: Outer = (cpp::CxxObject(2),);
+    var tuple = (cpp::CxxObject(3),);
+    var array: cpp::CxxObject[2];
+    var optional: cpp::CxxObject? = cpp::CxxObject(4);
+    var move_outer = outer; // expected-error: Type 'Outer' is not movable
+    var copy_outer = copy outer; // expected-error: Type 'Outer' is not copyable
+    var copy_nested = copy nested; // expected-error: Type 'Nested' is not copyable
+    var move_nested = nested; // expected-error: Type 'Nested' is not movable
+    var copy_tuple = copy tuple; // expected-error: Type '(CxxObject)' is not copyable
+    var move_tuple = tuple; // expected-error: Type '(CxxObject)' is not movable
+    var copy_array = copy array; // expected-error: Type 'CxxObject[2]' is not copyable
+    var move_array = array; // expected-error: Type 'CxxObject[2]' is not movable
+    var copy_optional = copy optional; // expected-error: Type 'CxxObject?' is not copyable
+    var move_optional = optional; // expected-error: Type 'CxxObject?' is not movable
+    var overloaded = cpp::CxxOverloaded(true);
+    var integer = cpp::CxxOverloaded(1);
+    var input: i32;
+    var referenced = cpp::CxxReference(&input);
+    var trivial: cpp::CxxTrivial;
+    var move_trivial = trivial; // expected-error: Type 'CxxTrivial' is not movable
+    var explicit_default = cpp::CxxNoDefault(8);
+    var move_explicit_default = explicit_default; // expected-error: Type 'CxxNoDefault' is not movable
+    var deleted: cpp::CxxDeleted; // expected-error: Type 'CxxDeleted' requires a non-empty initialiser
+    var templated = cpp::CxxTemplateOnly(1); // expected-error: Cannot initialise 'CxxTemplateOnly' from '(int)'
+    var derived = cpp::CxxDerived(7);
+    var hidden: cpp::CxxHidden;
+    var plain: cpp::CxxPlain = (1,);
+    var plain_copy = copy plain; // expected-warning: Redundant explicit 'copy' of trivially-copyable type 'CxxPlain'
+    var plain_move = plain;
+    var no_default = cpp::CxxNoDefault(); // expected-error: Procedure 'init' expects 1 argument, got 0
+    var private_destructor: cpp::CxxPrivate; // expected-error: Type 'CxxPrivate' requires a non-empty initialiser
+}
+
+// expected-note@*: Callee declared here

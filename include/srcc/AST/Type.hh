@@ -125,6 +125,9 @@ public:
     /// Check if this type can be copied.
     [[nodiscard]] bool can_copy() const;
 
+    /// Whether an existing object of this type can be relocated.
+    [[nodiscard]] bool can_move() const;
+
     /// Whether every value of this type has a stable representation that can
     /// be persisted as a byte buffer w/o padding etc. Tail padding is *not*
     /// included here (except when a type with tail padding is used as the
@@ -217,7 +220,7 @@ public:
 
     /// Whether this type is trivially copyable.
     [[nodiscard]] bool trivially_copyable() const {
-        return not requires_deletion();
+        return can_copy() and can_move() and not requires_deletion();
     }
 
     /// Visit this type.
@@ -952,7 +955,7 @@ public:
         bool is_union             : 1 = false;
         bool literal_initialiser  : 1 = true;
         bool zero_init            : 1 = true;
-        Encoded padding : 1{};
+        bool can_move             : 1 = true;
 
         // Get record bits for a type that is compatible with C.
         static auto CLikeType(
@@ -1135,7 +1138,8 @@ public:
     void update_initialisation(
         TranslationUnit& tu,
         bool has_initialisers,
-        bool has_empty_initialiser
+        bool has_empty_initialiser,
+        bool allow_aggregate = false
     );
 
     static bool classof(const TypeBase* t) {

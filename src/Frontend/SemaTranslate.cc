@@ -450,7 +450,7 @@ auto Sema::TranslateCopyExpr(ParsedCopyExpr* c, Opt<Type>) -> Ptr<Stmt> {
             "If you want to be able to copy it, implement '%1(copy%)' for\f'{}'",
             arg->type->strip_arrays_and_optionals()
         );
-        return arg;
+        return {};
     }
 
     return new (*tu) CastExpr(arg->type, CastExpr::LValueCopy, arg, c->loc);

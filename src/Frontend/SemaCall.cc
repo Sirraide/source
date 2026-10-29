@@ -480,6 +480,17 @@ bool Sema::CheckIntents(ProcType* ty, MutableArrayRef<Expr*> args) {
     bool ok = true;
     for (auto [p, a] : zip(ty->params(), args)) {
         if (
+            (p.intent == Intent::Move or p.intent == Intent::ByValue) and
+            not p.type->can_move() and
+            a->is_lvalue() and
+            not isa<MaterialiseTemporaryExpr>(a)
+        ) {
+            Error(a->location(), "Type '{}' is not movable", p.type);
+            ok = false;
+            continue;
+        }
+
+        if (
             p.type->pass_by_reference(tu->target(), p.intent) and
             (not isa<CastExpr>(a) or cast<CastExpr>(a)->kind != CastExpr::MaterialisePoisonValue) and
             not a->is_mutable_lvalue()

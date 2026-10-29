@@ -58,6 +58,7 @@ target_compile_options(options INTERFACE
     -fno-exceptions
     -fno-rtti
     -fwrapv
+    -Xclang -fnamed-loops
 
     ## Warnings.
     -Wall -Wextra     # Enable ‘all’ warnings.

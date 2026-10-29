@@ -15,7 +15,7 @@ using namespace srcc;
 
 namespace {
 enum struct TypeIndex : u64 { Invalid = ~u64(0) };
-constexpr u32 CurrentVersion = 16;
+constexpr u32 CurrentVersion = 17;
 
 struct Header {
     LIBBASE_SERIALISE(Header, version, decls_size, specials_size, types_size);

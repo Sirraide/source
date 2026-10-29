@@ -579,8 +579,17 @@ auto ABIImpl::lower_procedure_signature(
     if (auto opt = dyn_cast<OptionalType>(ret); opt and opt->has_transparent_layout())
         ret = opt->elem();
 
+    // A C++ constructor wrapper writes directly to its first parameter.
+    // This is not an sret parameter, but an actual pointer.
+    if (proc->cconv() == CallingConvention::CXXConstructorWrapper) {
+        Assert(not needs_environment and not proc->returns_lvalue());
+        ctx.allocate();
+        info.args.push_back(indirect_ptr);
+        AddArgType(cg.get_ptr_ty(), GetElemTyAttrsForPointee(cg, ret));
+    }
+
     // LValue returns are just pointers.
-    if (proc->returns_lvalue()) {
+    else if (proc->returns_lvalue()) {
         AddReturnType(
             cg.get_ptr_ty(),
             GetElemTyAttrsForPointee(cg, ret)

@@ -768,9 +768,15 @@ bool Sema::IsZeroSizedOrIncomplete(Type ty) {
 
 auto Sema::LValueToRValue(Expr* expr) -> Expr* {
     if (expr->is_rvalue()) return expr;
+    auto kind = CastExpr::LValueToRValue;
+    if (not expr->type->can_move()) {
+        Error(expr->location(), "Type '{}' is not movable", expr->type);
+        kind = CastExpr::MaterialisePoisonValue;
+    }
+
     return new (*tu) CastExpr(
         expr->type,
-        CastExpr::LValueToRValue,
+        kind,
         expr,
         expr->location(),
         true,

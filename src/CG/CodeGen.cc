@@ -98,7 +98,9 @@ auto CodeGen::AppendBlock(std::unique_ptr<Block> bb) -> Block* {
 
 auto CodeGen::C(CallingConvention l) -> LLVM::CConv {
     switch (l) {
-        case CallingConvention::Native: return LLVM::CConv::C;
+        case CallingConvention::Native:
+        case CallingConvention::CXXConstructorWrapper:
+            return LLVM::CConv::C;
     }
     Unreachable();
 }
@@ -1997,6 +1999,12 @@ auto CodeGen::EmitCallExpr(CallExpr* expr) -> IRValue {
 auto CodeGen::EmitCallExpr(CallExpr* expr, Value mrvalue_slot) -> IRValue {
     auto proc = cast<ProcType>(expr->callee->type);
     auto l = C(expr->location());
+
+    // Sanity check.
+    if (proc->cconv() == CallingConvention::CXXConstructorWrapper) {
+        Assert(mrvalue_slot, "Constructor wrappers must be emitted into their result storage");
+        Assert(expr->is_rvalue() and expr->type->eval_mode() == EvalMode::Memory);
+    }
 
     // Callee is evaluated first.
     auto callee = Emit(expr->callee);
